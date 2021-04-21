@@ -11,10 +11,8 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.connect.json.JsonDeserializer;
 import org.apache.kafka.connect.json.JsonSerializer;
 import org.apache.kafka.streams.*;
-import org.apache.kafka.streams.kstream.Consumed;
-import org.apache.kafka.streams.kstream.KStream;
-import org.apache.kafka.streams.kstream.Materialized;
-import org.apache.kafka.streams.kstream.Produced;
+import org.apache.kafka.streams.kstream.*;
+
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -42,8 +40,9 @@ public class TradesStream {
         StreamsConfig config = new StreamsConfig(settings);
         StreamsBuilder builder = new StreamsBuilder();
         KStream<String, JsonNode> tradesRelStream = builder.stream(TRADES_REL_TOPIC, Consumed.with(Serdes.String(), jsonNodeSerde));
+        KTable<String, JsonNode> tradesTable = builder.table(TRADES_TOPIC);
 
-        tradesRelStream.flatMap((key, value)->{
+        KTable<String, JsonNode> tradesRelTable = tradesRelStream.flatMap((key, value)->{
                     List<KeyValue<String, JsonNode>> keyValueList = new ArrayList<KeyValue<String, JsonNode>>();
                     ObjectNode expectedUnderlyingTrades = (ObjectNode)value.get("expectedUnderlyingTrades");
                     Iterator<String> tradeIds = expectedUnderlyingTrades.fieldNames();
@@ -64,7 +63,38 @@ public class TradesStream {
                      objectNode.put(newValue.get("tradeRelID").asText(), newValue);
 
                     return objectNode;
-                },Materialized.with(Serdes.String(), jsonNodeSerde))
+                },Materialized.with(Serdes.String(), jsonNodeSerde));
+
+        tradesTable.join(tradesRelTable,
+                (tradeData, tradeRelData) -> {
+                  Iterator<String> tradeIds = tradeRelData.fieldNames();
+
+                   while(tradeIds.hasNext()){
+                       String tradeId = tradeIds.next();
+                       JsonNode tradeDataWithoutReported = tradeRelData.get(tradeId);
+                       ObjectNode tradeReportedData = mapper.createObjectNode();
+                       tradeReportedData.put(tradeData.get("tradeId").asText(), tradeData);
+                       ((ObjectNode)tradeDataWithoutReported).put("reportedProcessedTrades", tradeReportedData);
+                   }
+                   return tradeRelData;
+                })
+                .toStream()
+                .flatMap((key, value) -> {
+                    List<KeyValue<String, JsonNode>> keyValueList = new ArrayList<>();
+                    Iterator<String> tradeIds = value.fieldNames();
+                    while(tradeIds.hasNext()) {
+                        String tradeId = tradeIds.next();
+                        keyValueList.add(new KeyValue<>(tradeId, value.get(tradeId)));
+
+                    }
+                    return  keyValueList;
+                })
+                .groupByKey()
+                .reduce((oldValue, newValue)->{
+                    ObjectNode reportedTrades = (ObjectNode) oldValue.get("reportedProcessedTrades");
+                    reportedTrades.putAll((ObjectNode) newValue.get("reportedProcessedTrades"));
+                    return oldValue;
+                })
                 .toStream()
                 .to(OUTPUT_TOPIC, Produced.with(Serdes.String(), jsonNodeSerde));
 

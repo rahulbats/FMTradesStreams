@@ -27,7 +27,39 @@ public class TradeStreamTest {
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:1234");
         Topology topology = tradesStream.getTopology(props);
         TopologyTestDriver testDriver = new TopologyTestDriver(topology, props);
-        TestInputTopic<String, JsonNode> inputTopic = testDriver.createInputTopic(TradesStream.TRADES_REL_TOPIC, Serdes.String().serializer(), new JsonSerializer());
+        TestInputTopic<String, JsonNode> tradeRelTopic = testDriver.createInputTopic(TradesStream.TRADES_REL_TOPIC, Serdes.String().serializer(), new JsonSerializer());
+        TestInputTopic<String, JsonNode> tradeTopic = testDriver.createInputTopic(TradesStream.TRADES_TOPIC, Serdes.String().serializer(), new JsonSerializer());
+        String tradeString11321 = "{\n" +
+                "\n" +
+                "  \"tradeEventId\" : \"681947\",\n" +
+                "\n" +
+                "  \"tradeId\" : \"605:-11321:1:BRS\",\n" +
+                "\n" +
+                "  \"Status\" : \"PROCESSED\",\n" +
+                "\n" +
+                "  \"sourceDataRecordId\" : 0,\n" +
+                "\n" +
+                "  \"sourceDataSetId\" : 0,\n" +
+                "\n" +
+                "  \"status\" : \"PROCESSED\"\n" +
+                "\n" +
+                "}";
+
+        String tradeString10903 = "{\n" +
+                "\n" +
+                "  \"tradeEventId\" : \"681948\",\n" +
+                "\n" +
+                "  \"tradeId\" : \"605:-10903:2:BRS\",\n" +
+                "\n" +
+                "  \"Status\" : \"PROCESSED\",\n" +
+                "\n" +
+                "  \"sourceDataRecordId\" : 0,\n" +
+                "\n" +
+                "  \"sourceDataSetId\" : 0,\n" +
+                "\n" +
+                "  \"status\" : \"PROCESSED\"\n" +
+                "\n" +
+                "}";
 
 
         String tradeRelString = "{\n" +
@@ -87,7 +119,15 @@ public class TradeStreamTest {
                 "}\n" +
                 "\n";
         JsonNode tradeRel = new ObjectMapper().readTree(tradeRelString);
-        inputTopic.pipeInput("682069", tradeRel);
+        tradeRelTopic.pipeInput("682069", tradeRel);
+
+        JsonNode trade = new ObjectMapper().readTree(tradeString11321);
+        tradeTopic.pipeInput("605:-11321:1:BRS", trade);
+
+
+        JsonNode trade2 = new ObjectMapper().readTree(tradeString10903);
+        tradeTopic.pipeInput("605:-10903:2:BRS", trade);
+
         TestOutputTopic<String, JsonNode> outputTopic = testDriver.createOutputTopic(TradesStream.OUTPUT_TOPIC, Serdes.String().deserializer(), new JsonDeserializer());
         assertEquals(outputTopic.getQueueSize(), 2);
         List<KeyValue<String, JsonNode>> keyValueList = outputTopic.readKeyValuesToList();
