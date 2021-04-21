@@ -96,6 +96,14 @@ public class TradesStream {
                     return oldValue;
                 })
                 .toStream()
+                .filter((key,value)->{
+                    int expected = value.get("expectedCountUnderlyingTrades").asInt();
+                    Iterator<String> reportedTrades = ((ObjectNode)value.get("reportedProcessedTrades")).fieldNames();
+                    int count=0;
+                    while(reportedTrades.hasNext())
+                        count++;
+                    return count==expected;
+                })
                 .to(OUTPUT_TOPIC, Produced.with(Serdes.String(), jsonNodeSerde));
 
 
