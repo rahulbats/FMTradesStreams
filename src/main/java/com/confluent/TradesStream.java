@@ -13,8 +13,6 @@ import org.apache.kafka.connect.json.JsonSerializer;
 import org.apache.kafka.streams.*;
 import org.apache.kafka.streams.errors.LogAndContinueExceptionHandler;
 import org.apache.kafka.streams.kstream.*;
-import org.apache.kafka.streams.state.QueryableStoreTypes;
-import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 
 import java.util.ArrayList;
 import java.util.Iterator;
