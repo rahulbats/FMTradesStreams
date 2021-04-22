@@ -161,7 +161,7 @@ public class TradeStreamTest {
 
 
         TestOutputTopic<String, JsonNode> outputTopic = testDriver.createOutputTopic(TradesStream.OUTPUT_TOPIC, Serdes.String().deserializer(), new JsonDeserializer());
-        assertEquals(2,outputTopic.getQueueSize());
+        assertEquals(1,outputTopic.getQueueSize());
         List<KeyValue<String, JsonNode>> keyValueList = outputTopic.readKeyValuesToList();
         assertEquals(outputTopic.readKeyValue(), new KeyValue<>("605:-10903:2:BRS", tradeRel));
 
