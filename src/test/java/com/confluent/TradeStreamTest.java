@@ -8,12 +8,15 @@ import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.connect.json.JsonDeserializer;
 import org.apache.kafka.connect.json.JsonSerializer;
 import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.state.KeyValueIterator;
+import org.apache.kafka.streams.state.KeyValueStore;
 import org.junit.Test;
 import org.junit.Assert.*;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 
@@ -128,8 +131,28 @@ public class TradeStreamTest {
         JsonNode trade2 = new ObjectMapper().readTree(tradeString10903);
         tradeTopic.pipeInput("605:-10903:2:BRS", trade);
 
+        KeyValueIterator tradesRelStore = testDriver.getKeyValueStore("trades-rel-table").all();
+        KeyValueIterator joinedStore = testDriver.getKeyValueStore("trades-rel-trade-joined-table").all();
+        KeyValueIterator processedTradeStore = testDriver.getKeyValueStore("processed-trade-table").all();
+
+        while(tradesRelStore.hasNext()){
+            System.out.println(tradesRelStore.next());
+        }
+
+
+        while(joinedStore.hasNext()){
+            System.out.println(joinedStore.next());
+        }
+
+
+        while(processedTradeStore.hasNext()){
+            System.out.println(processedTradeStore.next());
+        }
+
+
+
         TestOutputTopic<String, JsonNode> outputTopic = testDriver.createOutputTopic(TradesStream.OUTPUT_TOPIC, Serdes.String().deserializer(), new JsonDeserializer());
-        assertEquals(outputTopic.getQueueSize(), 2);
+        assertEquals(2,outputTopic.getQueueSize());
         List<KeyValue<String, JsonNode>> keyValueList = outputTopic.readKeyValuesToList();
         assertEquals(outputTopic.readKeyValue(), new KeyValue<>("605:-10903:2:BRS", tradeRel));
 

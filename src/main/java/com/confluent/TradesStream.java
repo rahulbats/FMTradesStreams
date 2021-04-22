@@ -11,7 +11,10 @@ import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.connect.json.JsonDeserializer;
 import org.apache.kafka.connect.json.JsonSerializer;
 import org.apache.kafka.streams.*;
+import org.apache.kafka.streams.errors.LogAndContinueExceptionHandler;
 import org.apache.kafka.streams.kstream.*;
+import org.apache.kafka.streams.state.QueryableStoreTypes;
+import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -36,7 +39,7 @@ public class TradesStream {
 
         // Default serde for values of data records (here: built-in serde for Long type)
         settings.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, JsonSerde.class.getName());
-
+        settings.put(StreamsConfig.DEFAULT_DESERIALIZATION_EXCEPTION_HANDLER_CLASS_CONFIG, LogAndContinueExceptionHandler.class);
         StreamsConfig config = new StreamsConfig(settings);
         StreamsBuilder builder = new StreamsBuilder();
         KStream<String, JsonNode> tradesRelStream = builder.stream(TRADES_REL_TOPIC, Consumed.with(Serdes.String(), jsonNodeSerde));
@@ -63,7 +66,8 @@ public class TradesStream {
                      objectNode.put(newValue.get("tradeRelID").asText(), newValue);
 
                     return objectNode;
-                },Materialized.with(Serdes.String(), jsonNodeSerde));
+                }, Materialized.as("trades-rel-table"));
+
 
         tradesTable.join(tradesRelTable,
                 (tradeData, tradeRelData) -> {
@@ -74,10 +78,14 @@ public class TradesStream {
                        JsonNode tradeDataWithoutReported = tradeRelData.get(tradeId);
                        ObjectNode tradeReportedData = mapper.createObjectNode();
                        tradeReportedData.put(tradeData.get("tradeId").asText(), tradeData);
-                       ((ObjectNode)tradeDataWithoutReported).put("reportedProcessedTrades", tradeReportedData);
+                       try {
+                           ((ObjectNode) tradeDataWithoutReported).put("reportedProcessedTrades", tradeReportedData);
+                       } catch (Exception e) {
+
+                       }
                    }
                    return tradeRelData;
-                })
+                }, Materialized.as("trades-rel-trade-joined-table"))
                 .toStream()
                 .flatMap((key, value) -> {
                     List<KeyValue<String, JsonNode>> keyValueList = new ArrayList<>();
@@ -94,14 +102,18 @@ public class TradesStream {
                     ObjectNode reportedTrades = (ObjectNode) oldValue.get("reportedProcessedTrades");
                     reportedTrades.putAll((ObjectNode) newValue.get("reportedProcessedTrades"));
                     return oldValue;
-                })
+                }, Materialized.as("processed-trade-table"))
                 .toStream()
                 .filter((key,value)->{
                     int expected = value.get("expectedCountUnderlyingTrades").asInt();
                     Iterator<String> reportedTrades = ((ObjectNode)value.get("reportedProcessedTrades")).fieldNames();
                     int count=0;
                     while(reportedTrades.hasNext())
+                    {
                         count++;
+                        reportedTrades.next();
+                    }
+
                     return count==expected;
                 })
                 .to(OUTPUT_TOPIC, Produced.with(Serdes.String(), jsonNodeSerde));
