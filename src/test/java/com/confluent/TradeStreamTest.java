@@ -129,22 +129,31 @@ public class TradeStreamTest {
 
 
         JsonNode trade2 = new ObjectMapper().readTree(tradeString10903);
-        tradeTopic.pipeInput("605:-10903:2:BRS", trade);
+        tradeTopic.pipeInput("605:-10903:2:BRS", trade2);
 
         KeyValueIterator tradesRelStore = testDriver.getKeyValueStore("trades-rel-table").all();
+        KeyValueIterator tradesStore = testDriver.getKeyValueStore("trades-table").all();
         KeyValueIterator joinedStore = testDriver.getKeyValueStore("trades-rel-trade-joined-table").all();
         KeyValueIterator processedTradeStore = testDriver.getKeyValueStore("processed-trade-table").all();
 
+        System.out.println("Contents of the trades rel ktable ===============");
         while(tradesRelStore.hasNext()){
             System.out.println(tradesRelStore.next());
         }
 
+        System.out.println("\n\nContents of the trades ktable ===============");
+        while(tradesStore.hasNext()){
+            System.out.println(tradesStore.next());
+        }
 
+
+
+        System.out.println("\n\nContents of the joined ktable ===============");
         while(joinedStore.hasNext()){
             System.out.println(joinedStore.next());
         }
 
-
+        System.out.println("\n\nContents of the processed trades ktable ===============");
         while(processedTradeStore.hasNext()){
             System.out.println(processedTradeStore.next());
         }

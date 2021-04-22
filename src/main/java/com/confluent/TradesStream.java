@@ -43,7 +43,7 @@ public class TradesStream {
         StreamsConfig config = new StreamsConfig(settings);
         StreamsBuilder builder = new StreamsBuilder();
         KStream<String, JsonNode> tradesRelStream = builder.stream(TRADES_REL_TOPIC, Consumed.with(Serdes.String(), jsonNodeSerde));
-        KTable<String, JsonNode> tradesTable = builder.table(TRADES_TOPIC);
+        KTable<String, JsonNode> tradesTable = builder.table(TRADES_TOPIC, Materialized.as("trades-table"));
 
         KTable<String, JsonNode> tradesRelTable = tradesRelStream.flatMap((key, value)->{
                     List<KeyValue<String, JsonNode>> keyValueList = new ArrayList<KeyValue<String, JsonNode>>();
