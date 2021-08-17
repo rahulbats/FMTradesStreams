@@ -1,9 +1,14 @@
 package com.confluent;
 
+import com.confluent.avro.Trade;
+import com.confluent.avro.TradeRel;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sun.xml.internal.bind.v2.schemagen.xmlschema.TopLevelAttribute;
+import io.confluent.kafka.serializers.AbstractKafkaAvroSerDeConfig;
+import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
+
+import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.connect.json.JsonDeserializer;
 import org.apache.kafka.connect.json.JsonSerializer;
@@ -16,22 +21,35 @@ import org.junit.Assert.*;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertThat;
 
-import java.util.Iterator;
+import java.awt.*;
+import java.util.*;
 import java.util.List;
-import java.util.Properties;
 
 public class TradeStreamTest {
     TradesStream tradesStream = new TradesStream();
+    private static final String SCHEMA_REGISTRY_SCOPE = TradeStreamTest.class.getName();
+    private static final String MOCK_SCHEMA_REGISTRY_URL = "mock://" + SCHEMA_REGISTRY_SCOPE;
+
     @Test
     public void testTrades() throws JsonProcessingException {
 
         Properties props = new Properties();
         props.put(StreamsConfig.APPLICATION_ID_CONFIG, "test");
         props.put(StreamsConfig.BOOTSTRAP_SERVERS_CONFIG, "dummy:1234");
+        props.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class);
+        props.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, MOCK_SCHEMA_REGISTRY_URL);
         Topology topology = tradesStream.getTopology(props);
         TopologyTestDriver testDriver = new TopologyTestDriver(topology, props);
-        TestInputTopic<String, JsonNode> tradeRelTopic = testDriver.createInputTopic(TradesStream.TRADES_REL_TOPIC, Serdes.String().serializer(), new JsonSerializer());
-        TestInputTopic<String, JsonNode> tradeTopic = testDriver.createInputTopic(TradesStream.TRADES_TOPIC, Serdes.String().serializer(), new JsonSerializer());
+        Serde<Trade> avroTradeSerde = new SpecificAvroSerde<>();
+        Serde<TradeRel> avroTradeRelSerde = new SpecificAvroSerde<>();
+        // Configure Serdes to use the same mock schema registry URL
+        Map<String, String> config = new HashMap<>();
+        config.put(AbstractKafkaAvroSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, MOCK_SCHEMA_REGISTRY_URL);
+        avroTradeSerde.configure(config, false);
+        avroTradeRelSerde.configure(config, false);
+
+        TestInputTopic<String, TradeRel> tradeRelTopic = testDriver.createInputTopic(TradesStream.TRADES_REL_TOPIC, Serdes.String().serializer(), avroTradeRelSerde.serializer());
+        TestInputTopic<String, Trade> tradeTopic = testDriver.createInputTopic(TradesStream.TRADES_TOPIC, Serdes.String().serializer(), avroTradeSerde.serializer());
         String tradeString11321 = "{\n" +
                 "\n" +
                 "  \"tradeEventId\" : \"681947\",\n" +
@@ -121,20 +139,24 @@ public class TradeStreamTest {
                 "\n" +
                 "}\n" +
                 "\n";
-        JsonNode tradeRel = new ObjectMapper().readTree(tradeRelString);
-        tradeRelTopic.pipeInput("682069", tradeRel);
-
-        JsonNode trade = new ObjectMapper().readTree(tradeString11321);
-        tradeTopic.pipeInput("605:-11321:1:BRS", trade);
+        TradeRel tradeRelObject = new TradeRel();
 
 
-        JsonNode trade2 = new ObjectMapper().readTree(tradeString10903);
-        tradeTopic.pipeInput("605:-10903:2:BRS", trade2);
+        tradeRelTopic.pipeInput("682069", tradeRelObject);
+
+        Trade tradeObject = new Trade();
+
+        tradeTopic.pipeInput("605:-11321:1:BRS", tradeObject);
+
+
+        Trade trade2Object = new Trade();
+        tradeTopic.pipeInput("605:-10903:2:BRS", trade2Object);
 
         KeyValueIterator tradesRelStore = testDriver.getKeyValueStore("trades-rel-table").all();
         KeyValueIterator tradesStore = testDriver.getKeyValueStore("trades-table").all();
         KeyValueIterator joinedStore = testDriver.getKeyValueStore("trades-rel-trade-joined-table").all();
         KeyValueIterator processedTradeStore = testDriver.getKeyValueStore("processed-trade-table").all();
+
 
         System.out.println("Contents of the trades rel ktable ===============");
         while(tradesRelStore.hasNext()){

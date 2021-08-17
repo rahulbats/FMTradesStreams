@@ -1,9 +1,12 @@
 package com.confluent;
 
+import com.confluent.avro.Trade;
+import com.confluent.avro.TradeRel;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.confluent.kafka.streams.serdes.avro.SpecificAvroSerde;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
@@ -14,10 +17,7 @@ import org.apache.kafka.streams.*;
 import org.apache.kafka.streams.errors.LogAndContinueExceptionHandler;
 import org.apache.kafka.streams.kstream.*;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
 
 public class TradesStream {
     public static final String TRADES_TOPIC = "dedup-output";
@@ -36,58 +36,72 @@ public class TradesStream {
         final Serde<JsonNode> jsonNodeSerde = Serdes.serdeFrom(jsonSerializer, jsonDeserializer);
 
         // Default serde for values of data records (here: built-in serde for Long type)
-        settings.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, JsonSerde.class.getName());
+        settings.put(StreamsConfig.DEFAULT_VALUE_SERDE_CLASS_CONFIG, SpecificAvroSerde.class);
         settings.put(StreamsConfig.DEFAULT_DESERIALIZATION_EXCEPTION_HANDLER_CLASS_CONFIG, LogAndContinueExceptionHandler.class);
+        settings.put("schema.registry.url", "http://my-schema-registry:8081");
+        final Map<String, String> serdeConfig = Collections.singletonMap("schema.registry.url",
+                "http://my-schema-registry:8081");
+        Serde<Trade> avroTradeSerde = new SpecificAvroSerde<>();
+        Serde<TradeRel> avroTradeRelSerde = new SpecificAvroSerde<>();
+        // Configure Serdes to use the same mock schema registry URL
+
+        avroTradeSerde.configure(serdeConfig, false);
+        avroTradeRelSerde.configure(serdeConfig, false);
+
+
         StreamsConfig config = new StreamsConfig(settings);
         StreamsBuilder builder = new StreamsBuilder();
-        KStream<String, JsonNode> tradesRelStream = builder.stream(TRADES_REL_TOPIC, Consumed.with(Serdes.String(), jsonNodeSerde));
-        KTable<String, JsonNode> tradesTable = builder.table(TRADES_TOPIC, Materialized.as("trades-table"));
+        KStream<String, TradeRel> tradesRelStream = builder.stream(TRADES_REL_TOPIC, Consumed.with(Serdes.String(), avroTradeRelSerde));
+        KTable<String, Trade> tradesTable = builder.table(TRADES_TOPIC,Consumed.with(Serdes.String(), avroTradeSerde), Materialized.as("trades-table"));
 
-        KTable<String, JsonNode> tradesRelTable = tradesRelStream.flatMap((key, value)->{
-                    List<KeyValue<String, JsonNode>> keyValueList = new ArrayList<KeyValue<String, JsonNode>>();
-                    ObjectNode expectedUnderlyingTrades = (ObjectNode)value.get("expectedUnderlyingTrades");
-                    Iterator<String> tradeIds = expectedUnderlyingTrades.fieldNames();
+        KTable<String, Map<String,TradeRel>> tradesRelTable = tradesRelStream.flatMap((key, value)->{
+                    List<KeyValue<String, Map<String, TradeRel>>> keyValueList = new ArrayList<>();
+                    Map<String, Trade> expectedUnderlyingTrades = value.getExpectedUnderlyingTrades();
+                    Iterator<String> tradeIds = expectedUnderlyingTrades.keySet().iterator();
                     while(tradeIds.hasNext()){
                         String tradeId = tradeIds.next();
-                        keyValueList.add(new KeyValue<String, JsonNode>(tradeId,value));
+
+                        Map<String, TradeRel> underlyingtrades = new HashMap<>();
+                        underlyingtrades.put(tradeId, value);
+                        //tempTradel.setExpectedUnderlyingTrades(underlyingtrades);
+                        keyValueList.add(new KeyValue<String,Map<String,TradeRel>>(tradeId,underlyingtrades));
                     }
                     return keyValueList;
                 })
                 .groupByKey()
                 .reduce((oldValue, newValue)->{
-                    ObjectNode objectNode = mapper.createObjectNode();
-                    try {
-                        objectNode.put(oldValue.get("tradeRelID").asText(), oldValue);
-                    }catch (NullPointerException ne){
+                    //During this Aggregate/Combine diff events of the same key (same Fnd+Inv+Ver+Src, combine their respective Underlying Trades Maps
 
-                    }
-                     objectNode.put(newValue.get("tradeRelID").asText(), newValue);
+                    oldValue.putAll(newValue);
 
-                    return objectNode;
+
+                    return oldValue;
+
                 }, Materialized.as("trades-rel-table"));
 
 
         tradesTable.join(tradesRelTable,
                 (tradeData, tradeRelData) -> {
-                  Iterator<String> tradeIds = tradeRelData.fieldNames();
+                  Iterator<String> tradeIds = tradeRelData.keySet().iterator();
 
-                   while(tradeIds.hasNext()){
+                    while(tradeIds.hasNext()){
                        String tradeId = tradeIds.next();
-                       JsonNode tradeDataWithoutReported = tradeRelData.get(tradeId);
-                       ObjectNode tradeReportedData = mapper.createObjectNode();
-                       tradeReportedData.put(tradeData.get("tradeId").asText(), tradeData);
-                       try {
-                           ((ObjectNode) tradeDataWithoutReported).put("reportedProcessedTrades", tradeReportedData);
-                       } catch (Exception e) {
 
-                       }
+                        TradeRel tradeDataWithoutReported = tradeRelData.get(tradeId);
+                        Map<String, Trade> tradeReportedData = new HashMap<>();
+                        tradeReportedData.put(tradeData.getTradeId(), tradeData);
+
+
+                        tradeDataWithoutReported.setReportedProcessedTrades(tradeReportedData);
+
+
                    }
                    return tradeRelData;
                 }, Materialized.as("trades-rel-trade-joined-table"))
                 .toStream()
                 .flatMap((key, value) -> {
-                    List<KeyValue<String, JsonNode>> keyValueList = new ArrayList<>();
-                    Iterator<String> tradeIds = value.fieldNames();
+                    List<KeyValue<String, TradeRel>> keyValueList = new ArrayList<>();
+                    Iterator<String> tradeIds = value.keySet().iterator();
                     while(tradeIds.hasNext()) {
                         String tradeId = tradeIds.next();
                         keyValueList.add(new KeyValue<>(tradeId, value.get(tradeId)));
@@ -97,14 +111,14 @@ public class TradesStream {
                 })
                 .groupByKey()
                 .reduce((oldValue, newValue)->{
-                    ObjectNode reportedTrades = (ObjectNode) oldValue.get("reportedProcessedTrades");
-                    reportedTrades.putAll((ObjectNode) newValue.get("reportedProcessedTrades"));
+                    Map<String, Trade> reportedTrades = oldValue.getReportedProcessedTrades();
+                    reportedTrades.putAll(newValue.getReportedProcessedTrades());
                     return oldValue;
                 }, Materialized.as("processed-trade-table"))
                 .toStream()
                 .filter((key,value)->{
-                    int expected = value.get("expectedCountUnderlyingTrades").asInt();
-                    Iterator<String> reportedTrades = ((ObjectNode)value.get("reportedProcessedTrades")).fieldNames();
+                    int expected = value.getExpectedUnderlyingTrades().size();
+                    Iterator<String> reportedTrades = value.getReportedProcessedTrades().keySet().iterator();
                     int count=0;
                     while(reportedTrades.hasNext())
                     {
@@ -114,11 +128,16 @@ public class TradesStream {
 
                     return count==expected;
                 })
-                .to(OUTPUT_TOPIC, Produced.with(Serdes.String(), jsonNodeSerde));
+                .to(OUTPUT_TOPIC, Produced.with(Serdes.String(), avroTradeRelSerde));
 
 
         Topology topology = builder.build();
+        System.out.println(topology.describe());
         return topology;
+    }
+
+    public static void main(String[] args) {
+
     }
 
 }

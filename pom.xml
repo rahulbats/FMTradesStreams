@@ -14,7 +14,23 @@
         <kafka.version>2.7.0</kafka.version>
 
     </properties>
+    <repositories>
 
+        <repository>
+            <id>central</id>
+            <url>https://repo1.maven.org/maven2/</url>
+        </repository>
+        <repository>
+            <id>confluent</id>
+            <url>https://packages.confluent.io/maven/</url>
+        </repository>
+    </repositories>
+    <pluginRepositories>
+        <pluginRepository>
+            <id>confluent</id>
+            <url>https://packages.confluent.io/maven/</url>
+        </pluginRepository>
+    </pluginRepositories>
     <dependencies>
         <dependency>
             <groupId>org.apache.kafka</groupId>
@@ -34,7 +50,16 @@
             <artifactId>spring-kafka</artifactId>
             <version>2.7.0</version>
         </dependency>
-
+        <dependency>
+            <groupId>io.confluent</groupId>
+            <artifactId>kafka-streams-avro-serde</artifactId>
+            <version>6.2.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.avro</groupId>
+            <artifactId>avro-maven-plugin</artifactId>
+            <version>1.10.2</version>
+        </dependency>
 
         <!-- https://mvnrepository.com/artifact/junit/junit -->
         <dependency>
@@ -45,4 +70,38 @@
         </dependency>
 
     </dependencies>
+  <build>
+      <plugins>
+          <plugin>
+              <groupId>org.apache.avro</groupId>
+              <artifactId>avro-maven-plugin</artifactId>
+              <version>1.10.2</version>
+              <configuration>
+                  <sourceDirectory>${project.basedir}/src/main/avro/</sourceDirectory>
+                  <!-- Use private visibility for Avro class fields instead of public -->
+                  <fieldVisibility>PRIVATE</fieldVisibility>
+                  <!-- Convert Avro logicalType uuid into Java UUID instead of String -->
+                  <customConversions>org.apache.avro.Conversions$UUIDConversion</customConversions>
+                  <!-- Convert Avro logicalType decimal into Java BigDecimal instead of ByteBuffer -->
+                  <enableDecimalLogicalType>true</enableDecimalLogicalType>
+                  <!-- Convert Avro string into Java String instead of CharSequence -->
+                  <stringType>String</stringType>
+                  <imports>
+                      <!-- Allow Book and Order classes to reference type specified in Price.avsc -->
+
+                      <import>src/main/avro/trades.avsc</import>
+                      <!--import>src/main/avro/tradesrel.avsc</import-->
+                  </imports>
+              </configuration>
+              <executions>
+                  <execution>
+                      <phase>generate-sources</phase>
+                      <goals>
+                          <goal>schema</goal>
+                      </goals>
+                  </execution>
+              </executions>
+          </plugin>
+      </plugins>
+  </build>
 </project>

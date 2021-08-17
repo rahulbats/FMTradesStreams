@@ -1,0 +1,31 @@
+{
+  "name": "Trade",
+  "type": "record",
+  "namespace": "com.confluent.avro",
+  "fields": [
+    {
+      "name": "tradeEventId",
+      "type": "string"
+    },
+    {
+      "name": "tradeId",
+      "type": "string"
+    },
+    {
+      "name": "Status",
+      "type": "string"
+    },
+    {
+      "name": "sourceDataRecordId",
+      "type": "int"
+    },
+    {
+      "name": "sourceDataSetId",
+      "type": "int"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    }
+  ]
+}
